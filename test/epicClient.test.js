@@ -250,3 +250,45 @@ test('surfaces non-JSON OAuth error bodies without masking HTTP details', async 
     },
   );
 });
+
+test('shares in-flight authentication across concurrent requests', async () => {
+  let tokenCalls = 0;
+  let releaseTokenResponse;
+  const tokenResponseReady = new Promise((resolve) => {
+    releaseTokenResponse = resolve;
+  });
+
+  const fetch = createFetchStub([
+    async (url) => {
+      if (url.endsWith('/oauth2/token')) {
+        tokenCalls += 1;
+        await tokenResponseReady;
+        return jsonResponse({ access_token: 'token-1', expires_in: 3600 });
+      }
+    },
+    (url) => {
+      if (url.endsWith('/Patient/123')) {
+        return jsonResponse({ resourceType: 'Patient', id: '123' });
+      }
+      if (url.endsWith('/Patient/124')) {
+        return jsonResponse({ resourceType: 'Patient', id: '124' });
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  const patient1Promise = client.getPatient('123');
+  const patient2Promise = client.getPatient('124');
+  releaseTokenResponse();
+
+  const [patient1, patient2] = await Promise.all([patient1Promise, patient2Promise]);
+  assert.equal(patient1.id, '123');
+  assert.equal(patient2.id, '124');
+  assert.equal(tokenCalls, 1);
+});

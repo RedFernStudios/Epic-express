@@ -32,6 +32,7 @@ class EpicClient {
     this.scope = scope;
     this.fetch = fetchImpl;
     this.token = null;
+    this.authPromise = null;
   }
 
   async authenticate({ scope = this.scope } = {}) {
@@ -104,7 +105,14 @@ class EpicClient {
       return this.token.accessToken;
     }
 
-    const token = await this.authenticate();
+    if (!this.authPromise) {
+      this.authPromise = this.authenticate()
+        .finally(() => {
+          this.authPromise = null;
+        });
+    }
+
+    const token = await this.authPromise;
     return token.accessToken;
   }
 
