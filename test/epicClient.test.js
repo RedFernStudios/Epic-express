@@ -91,6 +91,66 @@ test('creates DocumentReference from binary upload flow', async () => {
   assert.equal(requests.filter(([url]) => url.endsWith('/oauth2/token')).length, 1);
 });
 
+test('normalizes Buffer attachment.data to base64 when creating DocumentReference', async () => {
+  const fetch = createFetchStub([
+    (url) => {
+      if (url.endsWith('/oauth2/token')) {
+        return jsonResponse({ access_token: 'token-1', expires_in: 3600 });
+      }
+    },
+    (url, options) => {
+      if (url.endsWith('/DocumentReference')) {
+        const payload = JSON.parse(options.body);
+        assert.equal(
+          payload.content[0].attachment.data,
+          Buffer.from('sample-document').toString('base64'),
+        );
+        return jsonResponse({ resourceType: 'DocumentReference', id: 'doc-buffer' }, 201);
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  const doc = await client.createDocumentReference({
+    patientId: 'p1',
+    attachments: [{
+      contentType: 'text/plain',
+      data: Buffer.from('sample-document'),
+      title: 'Buffered data',
+    }],
+  });
+
+  assert.equal(doc.id, 'doc-buffer');
+});
+
+test('rejects non-string non-buffer attachment.data values', async () => {
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: async () => {
+      throw new Error('fetch should not be called');
+    },
+  });
+
+  await assert.rejects(
+    () => client.createDocumentReference({
+      patientId: 'p1',
+      attachments: [{
+        contentType: 'text/plain',
+        data: { invalid: true },
+      }],
+    }),
+    /attachment\.data must be a base64 string or Buffer/,
+  );
+});
+
 test('retrieves existing DocumentReference attachment by URL', async () => {
   const fetch = createFetchStub([
     (url) => {

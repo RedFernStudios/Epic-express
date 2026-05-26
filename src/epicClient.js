@@ -198,11 +198,21 @@ class EpicClient {
       if (!attachment.data && !attachment.url) {
         throw new Error('attachment.data or attachment.url is required');
       }
+      const attachmentData = Buffer.isBuffer(attachment.data)
+        ? attachment.data.toString('base64')
+        : attachment.data;
+      if (
+        attachmentData !== undefined
+        && attachmentData !== null
+        && typeof attachmentData !== 'string'
+      ) {
+        throw new Error('attachment.data must be a base64 string or Buffer');
+      }
 
       return {
         attachment: {
           contentType: attachment.contentType,
-          data: attachment.data,
+          data: attachmentData,
           url: attachment.url,
           title: attachment.title,
         },
