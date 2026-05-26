@@ -164,3 +164,29 @@ test('reuses token when expires_in is smaller than default refresh buffer', asyn
 
   assert.equal(tokenCalls, 1);
 });
+
+test('uses OAuth token_type in authorization header', async () => {
+  const fetch = createFetchStub([
+    (url) => {
+      if (url.endsWith('/oauth2/token')) {
+        return jsonResponse({ access_token: 'token-1', token_type: 'Epic', expires_in: 3600 });
+      }
+    },
+    (url, options) => {
+      if (url.endsWith('/Patient/123')) {
+        assert.equal(options.headers.authorization, 'Epic token-1');
+        return jsonResponse({ resourceType: 'Patient', id: '123' });
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  const patient = await client.getPatient('123');
+  assert.equal(patient.id, '123');
+});
