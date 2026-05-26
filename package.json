@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Modular Epic EHR integration utility for Node.js and Express",
   "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "node --test"
   },
