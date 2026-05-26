@@ -50,7 +50,22 @@ class EpicClient {
       body,
     });
 
-    const tokenBody = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const rawTokenBody = await response.text();
+    let tokenBody = rawTokenBody;
+
+    if (rawTokenBody) {
+      const shouldAttemptJsonParse = contentType.includes('application/json')
+        || /^[\s]*[\[{]/.test(rawTokenBody);
+
+      if (shouldAttemptJsonParse) {
+        try {
+          tokenBody = JSON.parse(rawTokenBody);
+        } catch {
+          tokenBody = rawTokenBody;
+        }
+      }
+    }
 
     if (!response.ok) {
       throw new EpicApiError('OAuth2 authentication failed', {
@@ -59,8 +74,18 @@ class EpicClient {
       });
     }
 
+    if (!tokenBody || typeof tokenBody !== 'object') {
+      throw new EpicApiError('OAuth2 authentication response was not valid JSON', {
+        status: response.status,
+        body: tokenBody,
+      });
+    }
+
     const now = Date.now();
-    const expiresInMs = (tokenBody.expires_in || 300) * 1000;
+    const expiresInSeconds = Number(tokenBody.expires_in);
+    const expiresInMs = Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+      ? expiresInSeconds * 1000
+      : 300 * 1000;
     const refreshBufferMs = Math.min(TOKEN_REFRESH_BUFFER_MS, Math.floor(expiresInMs / 2));
 
     this.token = {

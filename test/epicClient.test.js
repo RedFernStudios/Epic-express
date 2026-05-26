@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { EpicClient } = require('../src');
+const { EpicApiError, EpicClient } = require('../src');
 
 function createFetchStub(handlers) {
   return async (url, options = {}) => {
@@ -189,4 +189,64 @@ test('uses OAuth token_type in authorization header', async () => {
 
   const patient = await client.getPatient('123');
   assert.equal(patient.id, '123');
+});
+
+test('authenticates with best-effort JSON parsing when content-type is not JSON', async () => {
+  const fetch = createFetchStub([
+    (url) => {
+      if (url.endsWith('/oauth2/token')) {
+        return new Response('{"access_token":"token-1","expires_in":3600}', {
+          status: 200,
+          headers: { 'content-type': 'text/plain' },
+        });
+      }
+    },
+    (url, options) => {
+      if (url.endsWith('/Patient/123')) {
+        assert.ok(options.headers.authorization.startsWith('Bearer '));
+        assert.ok(options.headers.authorization.endsWith('token-1'));
+        return jsonResponse({ resourceType: 'Patient', id: '123' });
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  const patient = await client.getPatient('123');
+  assert.equal(patient.id, '123');
+});
+
+test('surfaces non-JSON OAuth error bodies without masking HTTP details', async () => {
+  const fetch = createFetchStub([
+    (url) => {
+      if (url.endsWith('/oauth2/token')) {
+        return new Response('invalid_client', {
+          status: 401,
+          headers: { 'content-type': 'text/plain' },
+        });
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  await assert.rejects(
+    () => client.getAccessToken(),
+    (error) => {
+      assert.ok(error instanceof EpicApiError);
+      assert.equal(error.status, 401);
+      assert.equal(error.body, 'invalid_client');
+      return true;
+    },
+  );
 });
