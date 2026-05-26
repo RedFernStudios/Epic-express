@@ -1,5 +1,6 @@
 const { Buffer } = require('node:buffer');
 const TOKEN_REFRESH_BUFFER_MS = 15000;
+const DEFAULT_TOKEN_EXPIRY_SECONDS = 300;
 
 class EpicApiError extends Error {
   constructor(message, { status, body } = {}) {
@@ -74,7 +75,8 @@ class EpicClient {
       });
     }
 
-    if (!tokenBody || typeof tokenBody !== 'object') {
+    const isPlainTokenBody = tokenBody && typeof tokenBody === 'object' && !Array.isArray(tokenBody);
+    if (!isPlainTokenBody) {
       throw new EpicApiError('OAuth2 authentication response was not valid JSON', {
         status: response.status,
         body: tokenBody,
@@ -85,7 +87,7 @@ class EpicClient {
     const expiresInSeconds = Number(tokenBody.expires_in);
     const expiresInMs = Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
       ? expiresInSeconds * 1000
-      : 300 * 1000;
+      : DEFAULT_TOKEN_EXPIRY_SECONDS * 1000;
     const refreshBufferMs = Math.min(TOKEN_REFRESH_BUFFER_MS, Math.floor(expiresInMs / 2));
 
     this.token = {
