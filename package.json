@@ -1,0 +1,17 @@
+{
+  "name": "epic-express",
+  "version": "1.0.0",
+  "description": "Modular Epic EHR integration utility for Node.js and Express",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "epic",
+    "fhir",
+    "express"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

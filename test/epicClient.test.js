@@ -1,0 +1,134 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const { EpicClient } = require('../src');
+
+function createFetchStub(handlers) {
+  return async (url, options = {}) => {
+    for (const handler of handlers) {
+      const result = await handler(url, options);
+      if (result) return result;
+    }
+
+    throw new Error(`Unhandled request: ${options.method || 'GET'} ${url}`);
+  };
+}
+
+function jsonResponse(body, status = 200, headers = {}) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'content-type': 'application/json',
+      ...headers,
+    },
+  });
+}
+
+test('authenticates then reads a patient', async () => {
+  const fetch = createFetchStub([
+    (url) => {
+      if (url.endsWith('/oauth2/token')) {
+        return jsonResponse({ access_token: 'token-1', expires_in: 3600 });
+      }
+    },
+    (url, options) => {
+      if (url.endsWith('/Patient/123')) {
+        assert.ok(options.headers.authorization.startsWith('Be'));
+        assert.ok(options.headers.authorization.endsWith('token-1'));
+        return jsonResponse({ resourceType: 'Patient', id: '123' });
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  const patient = await client.getPatient('123');
+  assert.equal(patient.id, '123');
+});
+
+test('creates DocumentReference from binary upload flow', async () => {
+  const requests = [];
+  const fetch = createFetchStub([
+    (url, options) => {
+      requests.push([url, options]);
+      if (url.endsWith('/oauth2/token')) {
+        return jsonResponse({ access_token: 'token-1', expires_in: 3600 });
+      }
+      if (url.endsWith('/Binary')) {
+        const payload = JSON.parse(options.body);
+        assert.equal(payload.resourceType, 'Binary');
+        assert.equal(payload.contentType, 'application/pdf');
+        return jsonResponse({ resourceType: 'Binary', id: 'bin-1' }, 201);
+      }
+      if (url.endsWith('/DocumentReference')) {
+        const payload = JSON.parse(options.body);
+        assert.equal(payload.subject.reference, 'Patient/p1');
+        assert.equal(payload.content[0].attachment.url, 'Binary/bin-1');
+        return jsonResponse({ resourceType: 'DocumentReference', id: 'doc-1' }, 201);
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  const doc = await client.createDocumentReferenceWithBinary({
+    patientId: 'p1',
+    contentType: 'application/pdf',
+    data: Buffer.from('sample-pdf'),
+  });
+
+  assert.equal(doc.id, 'doc-1');
+  assert.equal(requests.filter(([url]) => url.endsWith('/oauth2/token')).length, 1);
+});
+
+test('retrieves existing DocumentReference attachment by URL', async () => {
+  const fetch = createFetchStub([
+    (url) => {
+      if (url.endsWith('/oauth2/token')) {
+        return jsonResponse({ access_token: 'token-1', expires_in: 3600 });
+      }
+    },
+    (url, options) => {
+      if (url.endsWith('/DocumentReference/doc-1')) {
+        assert.ok(options.headers.authorization.startsWith('Be'));
+        assert.ok(options.headers.authorization.endsWith('token-1'));
+        return jsonResponse({
+          resourceType: 'DocumentReference',
+          id: 'doc-1',
+          content: [{ attachment: { url: 'Binary/bin-2', contentType: 'application/pdf' } }],
+        });
+      }
+    },
+    (url, options) => {
+      if (url.endsWith('/Binary/bin-2')) {
+        assert.ok(options.headers.authorization.startsWith('Be'));
+        assert.ok(options.headers.authorization.endsWith('token-1'));
+        return new Response(Buffer.from('pdf-binary-data'), {
+          status: 200,
+          headers: { 'content-type': 'application/pdf' },
+        });
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  const asset = await client.getDocumentReferenceAsset('doc-1');
+  assert.equal(asset.contentType, 'application/pdf');
+  assert.equal(asset.data.toString(), 'pdf-binary-data');
+});
