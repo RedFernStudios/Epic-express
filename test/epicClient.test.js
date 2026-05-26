@@ -132,3 +132,35 @@ test('retrieves existing DocumentReference attachment by URL', async () => {
   assert.equal(asset.contentType, 'application/pdf');
   assert.equal(asset.data.toString(), 'pdf-binary-data');
 });
+
+test('reuses token when expires_in is smaller than default refresh buffer', async () => {
+  let tokenCalls = 0;
+  const fetch = createFetchStub([
+    (url) => {
+      if (url.endsWith('/oauth2/token')) {
+        tokenCalls += 1;
+        return jsonResponse({ access_token: 'token-1', expires_in: 10 });
+      }
+    },
+    (url) => {
+      if (url.endsWith('/Patient/123')) {
+        return jsonResponse({ resourceType: 'Patient', id: '123' });
+      }
+      if (url.endsWith('/Patient/124')) {
+        return jsonResponse({ resourceType: 'Patient', id: '124' });
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  await client.getPatient('123');
+  await client.getPatient('124');
+
+  assert.equal(tokenCalls, 1);
+});

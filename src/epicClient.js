@@ -59,10 +59,14 @@ class EpicClient {
       });
     }
 
+    const now = Date.now();
+    const expiresInMs = (tokenBody.expires_in || 300) * 1000;
+    const refreshBufferMs = Math.min(TOKEN_REFRESH_BUFFER_MS, Math.floor(expiresInMs / 2));
+
     this.token = {
       accessToken: tokenBody.access_token,
       tokenType: tokenBody.token_type || 'Bearer',
-      expiresAt: Date.now() + ((tokenBody.expires_in || 300) * 1000) - TOKEN_REFRESH_BUFFER_MS,
+      expiresAt: now + Math.max(expiresInMs - refreshBufferMs, 0),
     };
 
     return this.token;
