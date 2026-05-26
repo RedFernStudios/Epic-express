@@ -1,4 +1,5 @@
 const { Buffer } = require('node:buffer');
+const TOKEN_REFRESH_BUFFER_MS = 15000;
 
 class EpicApiError extends Error {
   constructor(message, { status, body } = {}) {
@@ -61,7 +62,7 @@ class EpicClient {
     this.token = {
       accessToken: tokenBody.access_token,
       tokenType: tokenBody.token_type || 'Bearer',
-      expiresAt: Date.now() + ((tokenBody.expires_in || 300) * 1000) - 15000,
+      expiresAt: Date.now() + ((tokenBody.expires_in || 300) * 1000) - TOKEN_REFRESH_BUFFER_MS,
     };
 
     return this.token;
@@ -76,6 +77,10 @@ class EpicClient {
     return token.accessToken;
   }
 
+  buildAuthorizationHeader(token) {
+    return 'Bearer ' + token;
+  }
+
   resolveUrl(pathOrUrl) {
     if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
     const path = pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`;
@@ -88,7 +93,7 @@ class EpicClient {
 
     if (auth) {
       const token = await this.getAccessToken();
-      requestHeaders.authorization = `Be${'arer '}${token}`;
+      requestHeaders.authorization = this.buildAuthorizationHeader(token);
     }
 
     let requestBody = body;
@@ -259,7 +264,7 @@ class EpicClient {
 
     if (url.startsWith(this.baseUrl)) {
       const token = await this.getAccessToken();
-      headers.authorization = `Be${'arer '}${token}`;
+      headers.authorization = this.buildAuthorizationHeader(token);
     }
 
     const response = await this.fetch(url, { headers });

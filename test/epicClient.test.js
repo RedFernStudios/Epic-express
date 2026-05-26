@@ -33,7 +33,7 @@ test('authenticates then reads a patient', async () => {
     },
     (url, options) => {
       if (url.endsWith('/Patient/123')) {
-        assert.ok(options.headers.authorization.startsWith('Be'));
+        assert.ok(options.headers.authorization.startsWith('Bearer '));
         assert.ok(options.headers.authorization.endsWith('token-1'));
         return jsonResponse({ resourceType: 'Patient', id: '123' });
       }
@@ -100,7 +100,7 @@ test('retrieves existing DocumentReference attachment by URL', async () => {
     },
     (url, options) => {
       if (url.endsWith('/DocumentReference/doc-1')) {
-        assert.ok(options.headers.authorization.startsWith('Be'));
+        assert.ok(options.headers.authorization.startsWith('Bearer '));
         assert.ok(options.headers.authorization.endsWith('token-1'));
         return jsonResponse({
           resourceType: 'DocumentReference',
@@ -111,7 +111,7 @@ test('retrieves existing DocumentReference attachment by URL', async () => {
     },
     (url, options) => {
       if (url.endsWith('/Binary/bin-2')) {
-        assert.ok(options.headers.authorization.startsWith('Be'));
+        assert.ok(options.headers.authorization.startsWith('Bearer '));
         assert.ok(options.headers.authorization.endsWith('token-1'));
         return new Response(Buffer.from('pdf-binary-data'), {
           status: 200,
