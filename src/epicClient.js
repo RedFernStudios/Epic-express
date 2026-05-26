@@ -97,7 +97,7 @@ class EpicClient {
 
     if (auth) {
       const token = await this.getAccessToken();
-      requestHeaders.authorization = this.buildAuthorizationHeader(token, this.token?.tokenType);
+      requestHeaders.authorization = this.buildAuthorizationHeader(token, this.token?.tokenType || 'Bearer');
     }
 
     let requestBody = body;
