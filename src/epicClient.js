@@ -81,8 +81,8 @@ class EpicClient {
     return token.accessToken;
   }
 
-  buildAuthorizationHeader(token, tokenType) {
-    return `${tokenType || 'Bearer'} ${token}`;
+  buildAuthorizationHeader(token, tokenType = 'Bearer') {
+    return `${tokenType} ${token}`;
   }
 
   resolveUrl(pathOrUrl) {
@@ -97,7 +97,7 @@ class EpicClient {
 
     if (auth) {
       const token = await this.getAccessToken();
-      requestHeaders.authorization = this.buildAuthorizationHeader(token, this.token?.tokenType || 'Bearer');
+      requestHeaders.authorization = this.buildAuthorizationHeader(token, this.token?.tokenType);
     }
 
     let requestBody = body;
