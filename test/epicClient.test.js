@@ -251,6 +251,34 @@ test('uses OAuth token_type in authorization header', async () => {
   assert.equal(patient.id, '123');
 });
 
+test('parses FHIR +json responses as JSON objects', async () => {
+  const fetch = createFetchStub([
+    (url) => {
+      if (url.endsWith('/oauth2/token')) {
+        return jsonResponse({ access_token: 'token-1', expires_in: 3600 });
+      }
+    },
+    (url) => {
+      if (url.endsWith('/Patient/123')) {
+        return new Response('{"resourceType":"Patient","id":"123"}', {
+          status: 200,
+          headers: { 'content-type': 'application/fhir+json' },
+        });
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  const patient = await client.getPatient('123');
+  assert.equal(patient.id, '123');
+});
+
 test('authenticates with best-effort JSON parsing when content-type is not JSON', async () => {
   const fetch = createFetchStub([
     (url) => {
@@ -311,6 +339,55 @@ test('surfaces non-JSON OAuth error bodies without masking HTTP details', async 
   );
 });
 
+test('rejects OAuth success payloads without access_token', async () => {
+  const fetch = createFetchStub([
+    (url) => {
+      if (url.endsWith('/oauth2/token')) {
+        return jsonResponse({ token_type: 'Bearer', expires_in: 3600 });
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  await assert.rejects(
+    () => client.getAccessToken(),
+    (error) => {
+      assert.ok(error instanceof EpicApiError);
+      assert.equal(error.status, 200);
+      assert.equal(
+        error.message,
+        'OAuth2 authentication response did not include a valid access_token',
+      );
+      return true;
+    },
+  );
+});
+
+test('rejects non-string non-buffer Binary data values', async () => {
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: async () => {
+      throw new Error('fetch should not be called');
+    },
+  });
+
+  await assert.rejects(
+    () => client.createBinary({
+      contentType: 'application/pdf',
+      data: { invalid: true },
+    }),
+    /data must be a base64 string or Buffer/,
+  );
+});
+
 test('shares in-flight authentication across concurrent requests', async () => {
   let tokenCalls = 0;
   let releaseTokenResponse;
@@ -351,4 +428,42 @@ test('shares in-flight authentication across concurrent requests', async () => {
   assert.equal(patient1.id, '123');
   assert.equal(patient2.id, '124');
   assert.equal(tokenCalls, 1);
+});
+
+test('uses OAuth token_type for in-host asset fetches', async () => {
+  const fetch = createFetchStub([
+    (url) => {
+      if (url.endsWith('/oauth2/token')) {
+        return jsonResponse({ access_token: 'token-1', token_type: 'Epic', expires_in: 3600 });
+      }
+    },
+    (url) => {
+      if (url.endsWith('/DocumentReference/doc-1')) {
+        return jsonResponse({
+          resourceType: 'DocumentReference',
+          id: 'doc-1',
+          content: [{ attachment: { url: 'Binary/bin-2', contentType: 'application/pdf' } }],
+        });
+      }
+    },
+    (url, options) => {
+      if (url.endsWith('/Binary/bin-2')) {
+        assert.equal(options.headers.authorization, 'Epic token-1');
+        return new Response(Buffer.from('pdf-binary-data'), {
+          status: 200,
+          headers: { 'content-type': 'application/pdf' },
+        });
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  const asset = await client.getDocumentReferenceAsset('doc-1');
+  assert.equal(asset.data.toString(), 'pdf-binary-data');
 });

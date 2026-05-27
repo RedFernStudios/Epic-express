@@ -58,6 +58,7 @@ class EpicClient {
 
     if (rawTokenBody) {
       const shouldAttemptJsonParse = contentType.includes('application/json')
+        || contentType.includes('+json')
         || /^[\s]*[\[{]/.test(rawTokenBody);
 
       if (shouldAttemptJsonParse) {
@@ -79,6 +80,12 @@ class EpicClient {
     const isPlainTokenBody = tokenBody && typeof tokenBody === 'object' && !Array.isArray(tokenBody);
     if (!isPlainTokenBody) {
       throw new EpicApiError('OAuth2 authentication response was not valid JSON', {
+        status: response.status,
+        body: tokenBody,
+      });
+    }
+    if (typeof tokenBody.access_token !== 'string' || !tokenBody.access_token) {
+      throw new EpicApiError('OAuth2 authentication response did not include a valid access_token', {
         status: response.status,
         body: tokenBody,
       });
@@ -150,9 +157,19 @@ class EpicClient {
     });
 
     const contentType = response.headers.get('content-type') || '';
-    const responseBody = contentType.includes('application/json')
-      ? await response.json()
-      : await response.text();
+    const rawResponseBody = await response.text();
+    const shouldAttemptJsonParse = contentType.includes('application/json')
+      || contentType.includes('+json')
+      || /^[\s]*[\[{]/.test(rawResponseBody);
+    let responseBody = rawResponseBody;
+
+    if (rawResponseBody && shouldAttemptJsonParse) {
+      try {
+        responseBody = JSON.parse(rawResponseBody);
+      } catch {
+        responseBody = rawResponseBody;
+      }
+    }
 
     if (!response.ok) {
       throw new EpicApiError('Epic request failed', {
@@ -172,6 +189,9 @@ class EpicClient {
   async createBinary({ contentType, data }) {
     if (!contentType) throw new Error('contentType is required');
     if (!data) throw new Error('data is required');
+    if (!Buffer.isBuffer(data) && typeof data !== 'string') {
+      throw new Error('data must be a base64 string or Buffer');
+    }
 
     const payload = {
       resourceType: 'Binary',
@@ -313,7 +333,7 @@ class EpicClient {
 
     if (url.startsWith(this.baseUrl)) {
       const token = await this.getAccessToken();
-      headers.authorization = this.buildAuthorizationHeader(token);
+      headers.authorization = this.buildAuthorizationHeader(token, this.token.tokenType);
     }
 
     const response = await this.fetch(url, { headers });
