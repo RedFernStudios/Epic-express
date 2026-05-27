@@ -91,6 +91,25 @@ test('creates DocumentReference from binary upload flow', async () => {
   assert.equal(requests.filter(([url]) => url.endsWith('/oauth2/token')).length, 1);
 });
 
+test('validates patientId before uploading Binary in createDocumentReferenceWithBinary', async () => {
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: async () => {
+      throw new Error('fetch should not be called');
+    },
+  });
+
+  await assert.rejects(
+    () => client.createDocumentReferenceWithBinary({
+      contentType: 'application/pdf',
+      data: Buffer.from('sample-pdf'),
+    }),
+    /patientId is required/,
+  );
+});
+
 test('normalizes Buffer attachment.data to base64 when creating DocumentReference', async () => {
   const fetch = createFetchStub([
     (url) => {
@@ -466,4 +485,63 @@ test('uses OAuth token_type for in-host asset fetches', async () => {
 
   const asset = await client.getDocumentReferenceAsset('doc-1');
   assert.equal(asset.data.toString(), 'pdf-binary-data');
+});
+
+test('does not attach auth for external asset URL with baseUrl prefix lookalike', async () => {
+  const fetch = createFetchStub([
+    (url) => {
+      if (url.endsWith('/oauth2/token')) {
+        return jsonResponse({ access_token: 'token-1', token_type: 'Epic', expires_in: 3600 });
+      }
+    },
+    (url) => {
+      if (url.endsWith('/DocumentReference/doc-1')) {
+        return jsonResponse({
+          resourceType: 'DocumentReference',
+          id: 'doc-1',
+          content: [{
+            attachment: {
+              url: 'https://ehr.example.com/fhir/R4.evil.com/Binary/bin-2',
+              contentType: 'application/pdf',
+            },
+          }],
+        });
+      }
+    },
+    (url, options) => {
+      if (url === 'https://ehr.example.com/fhir/R4.evil.com/Binary/bin-2') {
+        assert.equal(options.headers.authorization, undefined);
+        return new Response(Buffer.from('pdf-binary-data'), {
+          status: 200,
+          headers: { 'content-type': 'application/pdf' },
+        });
+      }
+    },
+  ]);
+
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: fetch,
+  });
+
+  const asset = await client.getDocumentReferenceAsset('doc-1');
+  assert.equal(asset.data.toString(), 'pdf-binary-data');
+});
+
+test('rejects authenticated absolute requests to external hosts', async () => {
+  const client = new EpicClient({
+    baseUrl: 'https://ehr.example.com/fhir/R4',
+    clientId: 'abc',
+    clientSecret: 'def',
+    fetchImpl: async () => {
+      throw new Error('fetch should not be called');
+    },
+  });
+
+  await assert.rejects(
+    () => client.request('https://example.org/Patient/123'),
+    /Authenticated requests are only allowed to the configured Epic host/,
+  );
 });

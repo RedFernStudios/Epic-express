@@ -26,6 +26,7 @@ class EpicClient {
     if (typeof fetchImpl !== 'function') throw new Error('fetch implementation is required');
 
     this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.baseUri = new URL(this.baseUrl);
     this.clientId = clientId;
     this.clientSecret = clientSecret;
     this.tokenUrl = tokenUrl || `${this.baseUrl}/oauth2/token`;
@@ -133,11 +134,26 @@ class EpicClient {
     return `${this.baseUrl}${path}`;
   }
 
+  isTrustedEpicUrl(url) {
+    const resolvedUrl = new URL(url);
+    if (resolvedUrl.origin !== this.baseUri.origin) return false;
+
+    const basePath = this.baseUri.pathname === '/'
+      ? ''
+      : this.baseUri.pathname.replace(/\/$/, '');
+    if (!basePath) return true;
+
+    return resolvedUrl.pathname === basePath || resolvedUrl.pathname.startsWith(`${basePath}/`);
+  }
+
   async request(pathOrUrl, { method = 'GET', headers = {}, body, auth = true } = {}) {
     const url = this.resolveUrl(pathOrUrl);
     const requestHeaders = { ...headers };
 
     if (auth) {
+      if (!this.isTrustedEpicUrl(url)) {
+        throw new Error('Authenticated requests are only allowed to the configured Epic host');
+      }
       const token = await this.getAccessToken();
       requestHeaders.authorization = this.buildAuthorizationHeader(token, this.token.tokenType);
     }
@@ -263,6 +279,8 @@ class EpicClient {
     description,
     date,
   }) {
+    if (!patientId) throw new Error('patientId is required');
+
     const binary = await this.createBinary({ contentType, data });
     if (!binary.id) throw new Error('Binary response did not include id');
 
@@ -331,7 +349,7 @@ class EpicClient {
     const url = this.resolveUrl(content.url);
     const headers = {};
 
-    if (url.startsWith(this.baseUrl)) {
+    if (this.isTrustedEpicUrl(url)) {
       const token = await this.getAccessToken();
       headers.authorization = this.buildAuthorizationHeader(token, this.token.tokenType);
     }

@@ -23,31 +23,35 @@ npm install epic-express
 ```js
 const { EpicClient, createEpicClientMiddleware } = require('epic-express');
 
-const client = new EpicClient({
-  baseUrl: 'https://your-epic-host/fhir/R4',
-  clientId: process.env.EPIC_CLIENT_ID,
-  clientSecret: process.env.EPIC_CLIENT_SECRET,
-  scope: 'system/*.read system/*.write',
-});
+async function main() {
+  const client = new EpicClient({
+    baseUrl: 'https://your-epic-host/fhir/R4',
+    clientId: process.env.EPIC_CLIENT_ID,
+    clientSecret: process.env.EPIC_CLIENT_SECRET,
+    scope: 'system/*.read system/*.write',
+  });
 
-const patient = await client.getPatient('12345');
+  const patient = await client.getPatient('12345');
 
-await client.createDocumentReferenceWithBinary({
-  patientId: '12345',
-  contentType: 'application/pdf',
-  data: Buffer.from('example'),
-  title: 'Summary PDF',
-});
+  await client.createDocumentReferenceWithBinary({
+    patientId: '12345',
+    contentType: 'application/pdf',
+    data: Buffer.from('example'),
+    title: 'Summary PDF',
+  });
 
-await client.createDocumentReferenceWithUrl({
-  patientId: '12345',
-  contentType: 'application/pdf',
-  url: 'https://storage.example.com/files/summary.pdf',
-  title: 'External PDF',
-});
+  await client.createDocumentReferenceWithUrl({
+    patientId: '12345',
+    contentType: 'application/pdf',
+    url: 'https://storage.example.com/files/summary.pdf',
+    title: 'External PDF',
+  });
 
-const references = await client.searchDocumentReferences({ patientId: '12345' });
-const asset = await client.getDocumentReferenceAsset('doc-id');
+  const references = await client.searchDocumentReferences({ patientId: '12345' });
+  const asset = await client.getDocumentReferenceAsset('doc-id');
+}
+
+main().catch(console.error);
 ```
 
 ### Express middleware
